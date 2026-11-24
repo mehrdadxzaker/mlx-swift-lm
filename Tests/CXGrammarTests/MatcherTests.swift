@@ -199,6 +199,59 @@ struct MatcherTests {
         )
     }
 
+    @Test
+    func stringPatternAlternationKeepsBothQuotes() throws {
+        let schema = #"""
+            {"type":"object","properties":{"total":{"type":"string","pattern":"-|-?[0-9]+(\\.[0-9]+)?"}},
+             "required":["total"],"additionalProperties":false}
+            """#
+        let cases: [(json: String, expected: XGStatus)] = [
+            (#"{"total":"-"}"#, XG_OK),
+            (#"{"total":"49.35"}"#, XG_OK),
+            (#"{"total":"invoice"}"#, XG_ERR_INVALID_ARG),
+            (#"{"total":49.35}"#, XG_ERR_INVALID_ARG),
+            (#"{"total":49.35"}"#, XG_ERR_INVALID_ARG),
+        ]
+        var eos = Int32(cases.count)
+        let strings = (cases.map(\.json) + ["<eos>"]).map { strdup($0) }
+        defer {
+            for string in strings {
+                free(string)
+            }
+        }
+        let vocab = strings.map { $0.map { UnsafePointer($0) } }
+
+        var info: OpaquePointer?
+        defer { xg_tokenizer_info_free(info) }
+        let tokenizerStatus = vocab.withUnsafeBufferPointer {
+            xg_tokenizer_info_new($0.baseAddress, $0.count, XG_VOCAB_TYPE_RAW, &eos, 1, &info)
+        }
+        try #require(tokenizerStatus == XG_OK)
+
+        var compiler: OpaquePointer?
+        defer { xg_grammar_compiler_free(compiler) }
+        try #require(xg_grammar_compiler_new(info, &compiler) == XG_OK)
+
+        var compiled: OpaquePointer?
+        defer { xg_compiled_grammar_free(compiled) }
+        let compileStatus = schema.withCString {
+            xg_compile_json_schema(compiler, $0, &compiled)
+        }
+        try #require(compileStatus == XG_OK)
+
+        for (id, testCase) in cases.enumerated() {
+            var matcher: OpaquePointer?
+            defer { xg_matcher_free(matcher) }
+            try #require(xg_matcher_new(compiled, &matcher) == XG_OK)
+
+            let status = xg_matcher_accept_token(matcher, Int32(id))
+            #expect(status == testCase.expected, "Unexpected result for \(testCase.json)")
+            if testCase.expected == XG_OK && status == XG_OK {
+                #expect(xg_matcher_accept_token(matcher, eos) == XG_OK)
+            }
+        }
+    }
+
     // MARK: - Shared matcher setup
 
     /// Groups the handles a matcher test needs. Ordered-destroy in

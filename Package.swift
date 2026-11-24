@@ -227,7 +227,9 @@ let package = Package(
                 // Compiled via Libraries/MLXCXGrammar/grammar_functor_wrapper.cc to
                 // provide out-of-class definitions for static const members that
                 // clang ODR-uses through variadic templates.
-                "xgrammar/cpp/grammar_functor.cc"
+                "xgrammar/cpp/grammar_functor.cc",
+                // Compiled via json_schema_converter_wrapper.cc to group regex fragments.
+                "xgrammar/cpp/json_schema_converter.cc",
             ],
             publicHeadersPath: "include",
             cxxSettings: [
